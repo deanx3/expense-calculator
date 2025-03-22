@@ -1,0 +1,36 @@
+{{range .expenses}}
+<tr>
+  <td class="px-6 py-3">{{.ExpenseLocation}}</td>
+  <td class="px-6 py-3">{{.Category}}</td>
+  <td class="px-6 py-3">{{.Amount}}</td>
+  <td class="px-6 py-3">{{.Date}}</td>
+  <td class="px-6 py-3">{{.Description}}</td>
+  <td class="px-6 py-3">
+    <!-- Add your action buttons here -->
+  </td>
+</tr>
+{{else}}
+<tr>
+  <td colspan="6" class="px-6 py-3 text-center">No expenses found</td>
+</tr>
+{{end}}
+
+<!-- Pagination Controls -->
+<tr>
+  <td colspan="6" class="px-6 py-3 text-center">
+    <div class="flex justify-center">
+      {{if gt .currentPage 1}}
+        <a href="#" hx-get="/api/expenses?page={{sub .currentPage 1}}&limit=10" hx-target="#expense-list" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700">Previous</a>
+      {{end}}
+
+      {{range $i := .totalPages}}
+        <a href="#" hx-get="/api/expenses?page={{$i}}&limit=10" hx-target="#expense-list" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700">{{$i}}</a>
+      {{end}}
+
+      {{if lt .currentPage .totalPages}}
+        <a href="#" hx-get="/api/expenses?page={{add .currentPage 1}}&limit=10" hx-target="#expense-list" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700">Next</a>
+      {{end}}
+    </div>
+  </td>
+</tr>
+

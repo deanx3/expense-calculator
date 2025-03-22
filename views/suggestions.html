@@ -1,0 +1,6 @@
+{{range .suggestions}}
+  <li class="suggestion-item p-2 cursor-pointer hover:bg-gray-600"onclick="handleSuggestionClick('{{.}}', event)" > 
+    {{.}}
+  </li>
+{{end}}
+

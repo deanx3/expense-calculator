@@ -1,0 +1,28 @@
+[GIN-debug] [WARNING] Creating an Engine instance with the Logger and Recovery middleware already attached.
+
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:	export GIN_MODE=release
+ - using code:	gin.SetMode(gin.ReleaseMode)
+
+[GIN-debug] GET    /                         --> main.main.func1 (3 handlers)
+[GIN-debug] POST   /submit                   --> main.main.func2 (3 handlers)
+[GIN-debug] GET    /api/suggestions          --> main.main.func3 (3 handlers)
+[GIN-debug] GET    /list                     --> main.main.func4 (3 handlers)
+[GIN-debug] [WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.
+Please check https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies for details.
+[GIN-debug] Listening and serving HTTP on :9090
+[GIN] 2025/03/22 - 05:10:31 | 200 |    1.589424ms |             ::1 | GET      "/list"
+[GIN] 2025/03/22 - 05:10:35 | 200 |    1.157565ms |             ::1 | GET      "/list"
+[GIN] 2025/03/22 - 05:10:38 | 200 |     356.977µs |             ::1 | GET      "/"
+[GIN] 2025/03/22 - 05:10:44 | 200 |     977.032µs |             ::1 | GET      "/api/suggestions?expense_location=C"
+[GIN] 2025/03/22 - 05:10:49 | 301 |    1.695145ms |             ::1 | POST     "/submit"
+[GIN] 2025/03/22 - 05:10:49 | 200 |    2.121994ms |             ::1 | GET      "/list"
+[GIN] 2025/03/22 - 05:10:52 | 200 |      74.722µs |             ::1 | GET      "/"
+[GIN] 2025/03/22 - 05:10:55 | 200 |     860.632µs |             ::1 | GET      "/api/suggestions?expense_location=K"
+[GIN] 2025/03/22 - 05:10:56 | 200 |     539.493µs |             ::1 | GET      "/api/suggestions?expense_location=KF"
+[GIN] 2025/03/22 - 05:10:56 | 200 |     498.204µs |             ::1 | GET      "/api/suggestions?expense_location=KFCV"
+[GIN] 2025/03/22 - 05:10:57 | 200 |     561.244µs |             ::1 | GET      "/api/suggestions?expense_location=KFC"
+[GIN] 2025/03/22 - 05:11:04 | 301 |     851.514µs |             ::1 | POST     "/submit"
+[GIN] 2025/03/22 - 05:11:04 | 200 |    1.065701ms |             ::1 | GET      "/list"
+[GIN] 2025/03/22 - 05:11:07 | 200 |    1.013973ms |             ::1 | GET      "/list?page=2"
+[GIN] 2025/03/22 - 05:11:11 | 200 |      62.018µs |             ::1 | GET      "/"
