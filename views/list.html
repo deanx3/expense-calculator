@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -15,6 +16,7 @@
 
         <!-- Table Section -->
         <div class="overflow-x-auto bg-gray-800 p-6 rounded-lg shadow-lg">
+            {{if .expenses}}
             <table class="w-full text-sm text-left text-gray-400">
                 <thead class="text-xs uppercase bg-gray-700 text-gray-200">
                     <tr>
@@ -23,23 +25,31 @@
                         <th scope="col" class="px-6 py-3">Amount</th>
                         <th scope="col" class="px-6 py-3">Date</th>
                         <th scope="col" class="px-6 py-3">Description</th>
+                        <th scope="col" class="px-6 py-3">Expense Type</th> <!-- Added Expense Type -->
+                        <th scope="col" class="px-6 py-3">Bank</th> <!-- Added Bank -->
                     </tr>
                 </thead>
                 <tbody>
                     {{range .expenses}}
-                    <tr>
+                    <tr class="border-b border-gray-700 hover:bg-gray-700">
                         <td class="px-6 py-4">{{.ExpenseLocation}}</td>
                         <td class="px-6 py-4">{{.Category}}</td>
-                        <td class="px-6 py-4">{{.Amount}}</td>
-              <td class="px-6 py-4">{{.CreatedAt}}</td>
+                        <td class="px-6 py-4">${{printf "%.2f" .Amount}}</td>
+                        <td class="px-6 py-4">{{.CreatedAt.Format "02 Jan 2006 15:04"}}</td> <!-- Format date -->
                         <td class="px-6 py-4">{{.Description}}</td>
+                        <td class="px-6 py-4">{{.ExpenseType}}</td> <!-- Expense Type -->
+                        <td class="px-6 py-4">{{.SourceName}}</td> <!-- Bank -->
                     </tr>
                     {{end}}
                 </tbody>
             </table>
+            {{else}}
+            <p class="text-center text-gray-400 py-6">No expenses recorded yet.</p>
+            {{end}}
         </div>
 
         <!-- Pagination Section -->
+        {{if gt .totalPages 1}}
         <div class="flex justify-between items-center mt-6">
             <div>
                 <span class="text-gray-400">Page {{.currentPage}} of {{.totalPages}}</span>
@@ -53,7 +63,7 @@
                 {{end}}
             </div>
         </div>
+        {{end}}
     </div>
 </body>
 </html>
-

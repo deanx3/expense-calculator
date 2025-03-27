@@ -1,0 +1,122 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Expense Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.0.3/dist/tailwind.min.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-900 text-white">
+  <div class="container mx-auto py-12">
+    <!-- Dashboard Header -->
+    <div class="flex justify-between items-center mb-6">
+      <h1 class="text-3xl font-semibold">Expense Dashboard</h1>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+      <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
+        <h2 class="text-xl font-semibold text-orange-500">Total Available Money</h2>
+        <p class="text-2xl mt-4">$ {{.TotalAvailableMoney}}</p>
+      </div>
+      <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
+        <h2 class="text-xl font-semibold text-green-500">Total Monthly Spending</h2>
+        <p class="text-2xl mt-4">$ {{.TotalMonthlySpending}}</p>
+      </div>
+      <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
+        <h2 class="text-xl font-semibold text-red-500">Total Yearly Spending</h2>
+        <p class="text-2xl mt-4">$ {{.TotalYearlySpending}}</p>
+      </div>
+    </div>
+
+    <!-- Additional KPIs -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+      <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
+        <h2 class="text-xl font-semibold text-yellow-500">Average Daily Spending</h2>
+        <p class="text-2xl mt-4">$ {{.AverageDailySpending}}</p>
+      </div>
+      <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
+        <h2 class="text-xl font-semibold text-teal-500">% of Income Spent</h2>
+        <p class="text-2xl mt-4">{{.PercentageIncomeSpent}}%</p>
+      </div>
+      <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
+        <h2 class="text-xl font-semibold text-indigo-500">Top 3 Spending Categories</h2>
+        <ul class="mt-4 space-y-2">
+          {{range .TopSpendingCategories}}
+          <li class="text-lg">{{.Category}}: $ {{.Amount}}</li>
+          {{end}}
+        </ul>
+      </div>
+    </div>
+
+    <!-- Spending Trend - Daily -->
+    <div class="bg-gray-800 p-6 rounded-lg shadow-lg mb-6">
+      <h2 class="text-xl font-semibold text-purple-500">Spending Trend - Daily</h2>
+      <canvas id="dailySpendingChart"></canvas>
+    </div>
+
+    <!-- Most Expensive Purchases -->
+    <div class="bg-gray-800 p-6 rounded-lg shadow-lg mb-6">
+      <h2 class="text-xl font-semibold text-red-500">Most Expensive Purchases</h2>
+      <ul class="mt-4 space-y-2">
+        {{range .TopExpensiveTransactions}}
+        <li class="text-lg">{{.ExpenseLocation}} - $ {{.Amount}} ({{.CreatedAt.Format "2006-01-02"}})</li>
+        {{end}}
+      </ul>
+    </div>
+
+    <!-- Latest Transactions -->
+    <div class="bg-gray-800 p-6 rounded-lg shadow-lg mb-6">
+      <h2 class="text-xl font-semibold text-teal-500">Latest 20 Transactions</h2>
+      <table class="w-full text-sm text-left text-gray-400 mt-4">
+        <thead class="text-xs uppercase bg-gray-700 text-gray-200">
+          <tr>
+            <th scope="col" class="px-6 py-3">Location</th>
+            <th scope="col" class="px-6 py-3">Category</th>
+            <th scope="col" class="px-6 py-3">Amount</th>
+            <th scope="col" class="px-6 py-3">Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .LatestTransactions}}
+          <tr>
+            <td class="px-6 py-4">{{.ExpenseLocation}}</td>
+            <td class="px-6 py-4">{{.Category}}</td>
+            <td class="px-6 py-4">${{.Amount}}</td>
+            <td class="px-6 py-4">{{.CreatedAt.Format "2006-01-02"}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    // Chart.js: Prepare daily spending trend chart
+    var ctx = document.getElementById('dailySpendingChart').getContext('2d');
+    var dailySpendingChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: {{.DailyDates}},  // e.g. ["2025-03-01", "2025-03-02", ...]
+        datasets: [{
+          label: 'Daily Spending',
+          data: {{.SpendingTrendDaily}},  // e.g. [200, 150, 180, ...]
+          borderColor: 'rgba(255, 99, 132, 1)',
+          backgroundColor: 'rgba(255, 99, 132, 0.2)',
+          fill: true
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            beginAtZero: true
+          }
+        }
+      }
+    });
+  </script>
+</body>
+</html>
