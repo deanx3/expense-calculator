@@ -12,4 +12,4 @@
 [GIN-debug] [WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.
 Please check https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies for details.
 [GIN-debug] Listening and serving HTTP on :9090
-[GIN] 2025/03/27 - 12:08:30 | 200 |    2.192034ms |             ::1 | GET      "/dashboard"
+[GIN] 2025/03/27 - 12:20:22 | 200 |    2.646639ms |             ::1 | GET      "/dashboard"

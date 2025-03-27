@@ -1,3 +1,4 @@
+
 package main
 
 import (
@@ -29,7 +30,7 @@ type Transection struct {
 
 type Balance struct {
 	mgm.DefaultModel `bson:",inline"`
-	Balance          float64 `json:"balance" bson:"balance" `
+	Balance          float64 `json:"balance" bson:"balance"`
 	SourceName       string  `json:"source_name" bson:"source_name"`
 }
 
@@ -172,79 +173,56 @@ func main() {
 	})
 
 	router.GET("/api/suggestions", func(c *gin.Context) {
-		query := c.DefaultQuery("expense_location", "") // Get query parameter 'q'
+		query := c.DefaultQuery("expense_location", "") // Get query parameter
 		if query == "" {
-			// If query is empty, return an empty suggestions list
 			c.HTML(http.StatusOK, "empty_suggestions.html", nil)
 			return
 		}
 
-		// Define a slice to hold the suggestions
 		var suggestions []Transection
-
-		// Build the filter to search for expense_location using a regex query
 		filter := bson.M{"expense_location": bson.M{"$regex": query, "$options": "i"}}
-
-		// Fetch data from MongoDB using mgm
 		err := mgm.Coll(&Transection{}).SimpleFind(&suggestions, filter)
 		if err != nil {
-			// If there's an error during the find operation, return an error response
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch suggestions"})
 			return
 		}
 
-		// Prepare the data for rendering
 		locations := make([]string, len(suggestions))
 		for i, s := range suggestions {
 			locations[i] = s.ExpenseLocation
 		}
 
-		// Render the suggestions as a list of <li> elements
 		c.HTML(http.StatusOK, "suggestions.html", gin.H{
 			"suggestions": locations,
 		})
 	})
 
 	router.GET("/list", func(c *gin.Context) {
-		// Pagination parameters
-		page, err := strconv.Atoi(c.DefaultQuery("page", "1")) // Default to page 1 if not provided
+		page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
 		if err != nil || page < 1 {
 			page = 1
 		}
-		limit, err := strconv.Atoi(c.DefaultQuery("limit", "10")) // Default to limit 10 if not provided
+		limit, err := strconv.Atoi(c.DefaultQuery("limit", "10"))
 		if err != nil || limit < 1 {
 			limit = 10
 		}
-
-		// Set skip (offset) based on the current page
 		skip := (page - 1) * limit
 
-		// Aggregation pipeline
 		pipeline := []interface{}{
-			// Stage 1: Use $facet to run multiple stages in parallel
 			map[string]interface{}{
 				"$facet": map[string]interface{}{
 					"data": []interface{}{
-						map[string]interface{}{
-							"$sort": map[string]interface{}{"created_at": -1}, // Sort by latest created_at
-						},
-						map[string]interface{}{
-							"$skip": skip,
-						},
-						map[string]interface{}{
-							"$limit": limit,
-						},
+						map[string]interface{}{"$sort": map[string]interface{}{"created_at": -1}},
+						map[string]interface{}{"$skip": skip},
+						map[string]interface{}{"$limit": limit},
 					},
 					"totalCount": []interface{}{
-						map[string]interface{}{
-							"$count": "total", // Count total documents
-						},
+						map[string]interface{}{"$count": "total"},
 					},
 				},
 			},
 		}
 
-		// Run aggregation query
 		var result []struct {
 			Data       []Transection `bson:"data"`
 			TotalCount []struct {
@@ -252,14 +230,12 @@ func main() {
 			} `bson:"totalCount"`
 		}
 
-		// Run aggregation on the collection
 		cursor, err := mgm.Coll(&Transection{}).Aggregate(mgm.Ctx(), pipeline)
 		if err != nil {
 			log.Println(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve expenses"})
 			return
 		}
-
 		defer cursor.Close(mgm.Ctx())
 
 		if err = cursor.All(mgm.Ctx(), &result); err != nil {
@@ -267,7 +243,6 @@ func main() {
 			return
 		}
 
-		// If there are no results
 		if len(result) == 0 {
 			c.HTML(http.StatusOK, "list.html", gin.H{
 				"expenses":    []Transection{},
@@ -279,27 +254,20 @@ func main() {
 			return
 		}
 
-		// Extract total count from the aggregation result
 		totalCount := 0
 		if len(result[0].TotalCount) > 0 {
 			totalCount = result[0].TotalCount[0].Total
 		}
-
-		// Calculate total pages
 		totalPages := (totalCount + limit - 1) / limit
-
-		// Calculate previous and next page numbers
 		prevPage := page - 1
 		if prevPage < 1 {
 			prevPage = 1
 		}
-
 		nextPage := page + 1
 		if nextPage > totalPages {
 			nextPage = totalPages
 		}
 
-		// Render the data into HTML rows and pagination controls
 		c.HTML(http.StatusOK, "list.html", gin.H{
 			"expenses":    result[0].Data,
 			"currentPage": page,
@@ -312,16 +280,20 @@ func main() {
 	router.GET("/dashboard", func(c *gin.Context) {
 		kpiData := getKPI()
 		c.HTML(http.StatusOK, "dashboard.html", gin.H{
-			"TotalMonthlySpending":     kpiData.TotalMonthlySpending,
-			"TotalYearlySpending":      kpiData.TotalYearlySpending,
-			"AverageDailySpending":     kpiData.AverageDailySpending,
-			"PercentageIncomeSpent":    kpiData.PercentageIncomeSpent,
-			"TotalAvailableMoney":      kpiData.TotalAvailableMoney,
-			"TopExpensiveTransactions": kpiData.TopExpensiveTransactions,
-			"LatestTransactions":       kpiData.LatestTransactions,
-			"SpendingTrendDaily":       kpiData.SpendingTrendDaily,
-			"DailyDates":               kpiData.DailyDates,
-			"TopSpendingCategories":    kpiData.TopSpendingCategories,
+			"TotalMonthlySpending":      kpiData.TotalMonthlySpending,
+			"TotalYearlySpending":       kpiData.TotalYearlySpending,
+			"AverageDailySpending":      kpiData.AverageDailySpending,
+			"PercentageIncomeSpent":     kpiData.PercentageIncomeSpent,
+			"TotalAvailableMoney":       kpiData.TotalAvailableMoney,
+			"TopExpensiveTransactions":  kpiData.TopExpensiveTransactions,
+			"LatestTransactions":        kpiData.LatestTransactions,
+			"SpendingTrendDaily":        kpiData.SpendingTrendDaily,
+			"DailyDates":                kpiData.DailyDates,
+			"TopSpendingCategories":     kpiData.TopSpendingCategories,
+			"BalanceSourceNames":        kpiData.BalanceSourceNames,
+			"BalanceAmounts":            kpiData.BalanceAmounts,
+			"ExpensivePurchaseCategories": kpiData.ExpensivePurchaseCategories,
+			"ExpensivePurchaseAmounts":  kpiData.ExpensivePurchaseAmounts,
 		})
 	})
 
@@ -335,16 +307,20 @@ type CategoryData struct {
 
 // KPIData holds all the data to be passed to the dashboard.
 type KPIData struct {
-	TotalMonthlySpending     float64
-	TotalYearlySpending      float64
-	AverageDailySpending     float64
-	PercentageIncomeSpent    float64
-	TotalAvailableMoney      float64
-	TopExpensiveTransactions []Transection
-	LatestTransactions       []Transection
-	SpendingTrendDaily       []float64
-	DailyDates               []string
-	TopSpendingCategories    []CategoryData
+	TotalMonthlySpending      float64
+	TotalYearlySpending       float64
+	AverageDailySpending      float64
+	PercentageIncomeSpent     float64
+	TotalAvailableMoney       float64
+	TopExpensiveTransactions  []Transection
+	LatestTransactions        []Transection
+	SpendingTrendDaily        []float64
+	DailyDates                []string
+	TopSpendingCategories     []CategoryData
+	BalanceSourceNames        []string
+	BalanceAmounts            []float64
+	ExpensivePurchaseCategories []string
+	ExpensivePurchaseAmounts  []float64
 }
 
 func getKPI() KPIData {
@@ -352,23 +328,23 @@ func getKPI() KPIData {
 	transactionCollection := mgm.Coll(&Transection{})
 	balanceCollection := mgm.Coll(&Balance{})
 
-	// Get current time and calculate start and end of month/year
 	now := time.Now()
 	currentMonth := now.Month()
 	startOfMonth := time.Date(now.Year(), currentMonth, 1, 0, 0, 0, 0, time.Local)
 	endOfMonth := startOfMonth.AddDate(0, 1, 0).Add(-time.Second)
 	startOfYear := time.Date(now.Year(), 1, 1, 0, 0, 0, 0, time.Local)
 
-	// Retrieve monthly transactions
+	// Retrieve monthly transactions excluding transfers
 	monthlyTransactions := []Transection{}
 	err := transactionCollection.SimpleFind(&monthlyTransactions, bson.M{
-		"created_at": bson.M{"$gte": startOfMonth, "$lte": endOfMonth},
+		"created_at":   bson.M{"$gte": startOfMonth, "$lte": endOfMonth},
+		"expense_type": bson.M{"$ne": "transfer"},
 	})
 	if err != nil {
 		log.Println("Error fetching monthly transactions:", err)
 	}
 
-	// Calculate Total Monthly Spending & build category totals
+	// Calculate Total Monthly Spending & category totals (exclude transfers)
 	var totalMonthlySpending float64
 	categoryTotals := make(map[string]float64)
 	for _, t := range monthlyTransactions {
@@ -378,10 +354,11 @@ func getKPI() KPIData {
 		}
 	}
 
-	// Calculate Total Yearly Spending
+	// Retrieve yearly transactions excluding transfers
 	yearlyTransactions := []Transection{}
 	err = transactionCollection.SimpleFind(&yearlyTransactions, bson.M{
-		"created_at": bson.M{"$gte": startOfYear},
+		"created_at":   bson.M{"$gte": startOfYear},
+		"expense_type": bson.M{"$ne": "transfer"},
 	})
 	if err != nil {
 		log.Println("Error fetching yearly transactions:", err)
@@ -393,33 +370,38 @@ func getKPI() KPIData {
 		}
 	}
 
-	// Calculate Average Daily Spending
+	// Average Daily Spending for current month
 	daysInMonth := startOfMonth.AddDate(0, 1, 0).Sub(startOfMonth).Hours() / 24
 	averageDailySpending := totalMonthlySpending / daysInMonth
 
-	// Fetch Balance data (assuming all balances represent income/available money)
+	// Fetch balance data for available money and balance chart
 	balances := []Balance{}
 	err = balanceCollection.SimpleFind(&balances, bson.M{})
 	if err != nil {
 		log.Println("Error fetching balances:", err)
 	}
-	var totalIncome float64
 	var totalAvailableMoney float64
+	var balanceSourceNames []string
+	var balanceAmounts []float64
+	var totalIncome float64
 	for _, balance := range balances {
 		totalIncome += balance.Balance
 		totalAvailableMoney += balance.Balance
+		balanceSourceNames = append(balanceSourceNames, balance.SourceName)
+		balanceAmounts = append(balanceAmounts, balance.Balance)
 	}
 
-	// Calculate % of Income Spent (guard against division by zero)
+	// Calculate % of Income Spent (avoid division by zero)
 	percentageOfIncomeSpent := 0.0
 	if totalIncome != 0 {
 		percentageOfIncomeSpent = (totalMonthlySpending / totalIncome) * 100
 	}
 
-	// Retrieve and sort Top Expensive Transactions for current month (descending order)
+	// Retrieve top expensive transactions for current month (exclude transfers)
 	topExpensiveTransactions := []Transection{}
 	err = transactionCollection.SimpleFind(&topExpensiveTransactions, bson.M{
-		"created_at": bson.M{"$gte": startOfMonth, "$lte": endOfMonth},
+		"created_at":   bson.M{"$gte": startOfMonth, "$lte": endOfMonth},
+		"expense_type": bson.M{"$ne": "transfer"},
 	})
 	if err != nil {
 		log.Println("Error fetching top transactions:", err)
@@ -431,7 +413,15 @@ func getKPI() KPIData {
 		topExpensiveTransactions = topExpensiveTransactions[:10]
 	}
 
-	// Build Daily Spending Trend & corresponding Dates for current month
+	// Prepare data for the Most Expensive Purchases pie chart
+	var expensivePurchaseCategories []string
+	var expensivePurchaseAmounts []float64
+	for _, t := range topExpensiveTransactions {
+		expensivePurchaseCategories = append(expensivePurchaseCategories, t.Category)
+		expensivePurchaseAmounts = append(expensivePurchaseAmounts, t.Amount)
+	}
+
+	// Build Daily Spending Trend & Dates for current month
 	var dailySpending []float64
 	var dailyDates []string
 	for day := 1; day <= int(daysInMonth); day++ {
@@ -447,9 +437,11 @@ func getKPI() KPIData {
 		dailyDates = append(dailyDates, dayStart.Format("2006-01-02"))
 	}
 
-	// Retrieve and sort Latest Transactions (descending by CreatedAt) and take top 20
+	// Retrieve latest transactions (exclude transfers) and take top 20
 	latestTransactions := []Transection{}
-	err = transactionCollection.SimpleFind(&latestTransactions, bson.M{})
+	err = transactionCollection.SimpleFind(&latestTransactions, bson.M{
+		"expense_type": bson.M{"$ne": "transfer"},
+	})
 	if err != nil {
 		log.Println("Error fetching latest transactions:", err)
 	}
@@ -460,7 +452,7 @@ func getKPI() KPIData {
 		latestTransactions = latestTransactions[:20]
 	}
 
-	// Calculate Top 3 Spending Categories from monthly data
+	// Calculate Top 3 Spending Categories
 	var topSpendingCategories []CategoryData
 	for cat, amt := range categoryTotals {
 		topSpendingCategories = append(topSpendingCategories, CategoryData{Category: cat, Amount: amt})
@@ -473,15 +465,19 @@ func getKPI() KPIData {
 	}
 
 	return KPIData{
-		TotalMonthlySpending:     totalMonthlySpending,
-		TotalYearlySpending:      totalYearlySpending,
-		AverageDailySpending:     averageDailySpending,
-		PercentageIncomeSpent:    percentageOfIncomeSpent,
-		TotalAvailableMoney:      totalAvailableMoney,
-		TopExpensiveTransactions: topExpensiveTransactions,
-		LatestTransactions:       latestTransactions,
-		SpendingTrendDaily:       dailySpending,
-		DailyDates:               dailyDates,
-		TopSpendingCategories:    topSpendingCategories,
+		TotalMonthlySpending:      totalMonthlySpending,
+		TotalYearlySpending:       totalYearlySpending,
+		AverageDailySpending:      averageDailySpending,
+		PercentageIncomeSpent:     percentageOfIncomeSpent,
+		TotalAvailableMoney:       totalAvailableMoney,
+		TopExpensiveTransactions:  topExpensiveTransactions,
+		LatestTransactions:        latestTransactions,
+		SpendingTrendDaily:        dailySpending,
+		DailyDates:                dailyDates,
+		TopSpendingCategories:     topSpendingCategories,
+		BalanceSourceNames:        balanceSourceNames,
+		BalanceAmounts:            balanceAmounts,
+		ExpensivePurchaseCategories: expensivePurchaseCategories,
+		ExpensivePurchaseAmounts:  expensivePurchaseAmounts,
 	}
 }
