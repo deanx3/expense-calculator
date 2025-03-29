@@ -26,7 +26,7 @@ func initMongoDB() {
 		// log.Fatal("Error loading .env file")
 	}
 
-	dbURI := os.Getenv("MONGODB_URL")
+	dbURI := os.Getenv("MONGO_URL")
 	dbName := os.Getenv("MONGODB_NAME")
 	if dbURI == "" || dbName == "" {
 		log.Fatal("Missing MongoDB credentials in environment variables")
