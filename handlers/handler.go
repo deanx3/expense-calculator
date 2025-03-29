@@ -40,8 +40,11 @@ func SubmitForm(ctx *gin.Context) {
 			balanceRecord.Balance -= formData.Amount
 
 		}
-			err := mgm.Coll(&balanceRecord).Update(&balanceRecord)
+		err := mgm.Coll(&balanceRecord).Update(&balanceRecord)
+		if err != nil {
 			ctx.HTML(http.StatusOK, "form.html", gin.H{"success": false, "error": err.Error()})
+			return
+		}
 	}
 
 	if formData.ExpenseType == "transfer" {
