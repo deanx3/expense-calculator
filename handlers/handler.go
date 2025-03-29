@@ -175,7 +175,7 @@ func Dashboard(ctx *gin.Context) {
 	monthlyTransactions := []models.Transection{}
 	err := transactionCollection.SimpleFind(&monthlyTransactions, bson.M{
 		"created_at":   bson.M{"$gte": startOfMonth, "$lte": endOfMonth},
-		"expense_type": bson.M{"$ne": "transfer"},
+		"expense_type": "outbound",
 	})
 	if err != nil {
 		fmt.Println("Error fetching monthly transactions:", err)
@@ -185,17 +185,15 @@ func Dashboard(ctx *gin.Context) {
 	var totalMonthlySpending float64
 	categoryTotals := make(map[string]float64)
 	for _, t := range monthlyTransactions {
-		if t.ExpenseType == "outbound" {
-			totalMonthlySpending += t.Amount
-			categoryTotals[t.Category] += t.Amount
-		}
+		totalMonthlySpending += t.Amount
+		categoryTotals[t.Category] += t.Amount
 	}
 
 	// Retrieve yearly transactions excluding transfers
 	yearlyTransactions := []models.Transection{}
 	err = transactionCollection.SimpleFind(&yearlyTransactions, bson.M{
 		"created_at":   bson.M{"$gte": startOfYear},
-		"expense_type": bson.M{"$ne": "transfer"},
+		"expense_type": "outbound",
 	})
 	if err != nil {
 		fmt.Println("Error fetching yearly transactions:", err)
@@ -203,9 +201,7 @@ func Dashboard(ctx *gin.Context) {
 
 	var totalYearlySpending float64
 	for _, t := range yearlyTransactions {
-		if t.ExpenseType == "outbound" {
-			totalYearlySpending += t.Amount
-		}
+		totalYearlySpending += t.Amount
 	}
 
 	// Average Daily Spending for current month
@@ -236,32 +232,62 @@ func Dashboard(ctx *gin.Context) {
 		percentageOfIncomeSpent = (totalMonthlySpending / totalIncome) * 100
 	}
 
+	pipeline := []bson.M{
+		{
+			"$match": bson.M{
+				"created_at":   bson.M{"$gte": startOfMonth, "$lte": endOfMonth},
+				"expense_type": "outbound",
+			},
+		},
+		{
+			"$group": bson.M{
+				"_id":   "$expense_location",
+				"total": bson.M{"$sum": "$amount"},
+			},
+		},
+		{
+			"$sort": bson.M{"total": -1}, // Sort in descending order
+		},
+	}
+
+	cursor, err := transactionCollection.Aggregate(mgm.Ctx(), pipeline)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	var results []struct {
+		Category string  `bson:"_id"`
+		Total    float64 `bson:"total"`
+	}
+
+	if err = cursor.All(mgm.Ctx(), &results); err != nil {
+		fmt.Println(err)
+	}
+	// Prepare data for the Most Expensive Purchases pie chart
+	var expensivePurchaseCategories []string
+	var expensivePurchaseAmounts []float64
+	for _, t := range results {
+		expensivePurchaseCategories = append(expensivePurchaseCategories, t.Category)
+		expensivePurchaseAmounts = append(expensivePurchaseAmounts, t.Total)
+	}
+
 	// Retrieve top expensive transactions for current month (exclude transfers)
 	topExpensiveTransactions := []models.Transection{}
 	err = transactionCollection.SimpleFind(&topExpensiveTransactions, bson.M{
 		"created_at":   bson.M{"$gte": startOfMonth, "$lte": endOfMonth},
-		"expense_type": bson.M{"$ne": "transfer"},
+		"expense_type": "outbound",
 	})
 	if err != nil {
 		fmt.Println("Error fetching top transactions:", err)
 	}
-
+	//
 	sort.Slice(topExpensiveTransactions, func(i, j int) bool {
 		return topExpensiveTransactions[i].Amount > topExpensiveTransactions[j].Amount
 	})
 	if len(topExpensiveTransactions) > 10 {
 		topExpensiveTransactions = topExpensiveTransactions[:10]
 	}
-
-	// Prepare data for the Most Expensive Purchases pie chart
-	var expensivePurchaseCategories []string
-	var expensivePurchaseAmounts []float64
-	for _, t := range topExpensiveTransactions {
-		expensivePurchaseCategories = append(expensivePurchaseCategories, t.Category)
-		expensivePurchaseAmounts = append(expensivePurchaseAmounts, t.Amount)
-	}
-
-	// Build Daily Spending Trend & Dates for current month
+	//
 	var dailySpending []float64
 	var dailyDates []string
 	for day := 1; day <= int(daysInMonth); day++ {
@@ -277,6 +303,33 @@ func Dashboard(ctx *gin.Context) {
 		dailyDates = append(dailyDates, dayStart.Format("2006-01-02"))
 	}
 
+	// Build Daily Spending Trend & Dates for current month
+	monthlySpendings := []models.Transection{}
+	err = transactionCollection.SimpleFind(&monthlySpendings, bson.M{
+		"created_at":   bson.M{"$gte": startOfMonth, "$lte": endOfMonth},
+		"expense_type": "inbound",
+	})
+	if err != nil {
+		fmt.Println("Error fetching monthly transactions:", err)
+	}
+
+	fmt.Println(len(monthlySpendings), startOfMonth, endOfMonth)
+	// Build Daily Income Trend & Dates for current month
+	var dailyIncome []float64
+	for day := 1; day <= int(daysInMonth); day++ {
+		dayStart := time.Date(now.Year(), currentMonth, day, 0, 0, 0, 0, time.Local)
+		dayEnd := dayStart.Add(24 * time.Hour).Add(-time.Second)
+		var dailyTotal float64
+		for _, t := range monthlySpendings {
+			if t.CreatedAt.After(dayStart) && t.CreatedAt.Before(dayEnd) {
+				dailyTotal += t.Amount
+			}
+		}
+		dailyIncome = append(dailyIncome, dailyTotal)
+		dailyDates = append(dailyDates, dayStart.Format("2006-01-02"))
+	}
+
+	fmt.Println(dailyIncome)
 	// Retrieve latest transactions (exclude transfers) and take top 20
 	latestTransactions := []models.Transection{}
 	err = transactionCollection.SimpleFind(&latestTransactions, bson.M{
@@ -313,6 +366,7 @@ func Dashboard(ctx *gin.Context) {
 		"TopExpensiveTransactions":    topExpensiveTransactions,
 		"LatestTransactions":          latestTransactions,
 		"SpendingTrendDaily":          dailySpending,
+		"IncomeTrendDaily":            dailyIncome,
 		"DailyDates":                  dailyDates,
 		"TopSpendingCategories":       topSpendingCategories,
 		"BalanceSourceNames":          balanceSourceNames,
