@@ -38,7 +38,9 @@ func SubmitForm(ctx *gin.Context) {
 
 			balanceRecord.Balance -= formData.Amount
 
-			_ = mgm.Coll(&balanceRecord).Update(&balanceRecord)
+			err := mgm.Coll(&balanceRecord).Update(&balanceRecord)
+			ctx.HTML(http.StatusOK, "form.html", gin.H{"success": false, "error": err.Error()})
+			return
 		}
 	}
 
@@ -300,7 +302,7 @@ func Dashboard(ctx *gin.Context) {
 	}
 
 	ctx.HTML(http.StatusOK, "dashboard.html", gin.H{
-		"TotalMonthlySpending": totalMonthlySpending,
+		"TotalMonthlySpending":        totalMonthlySpending,
 		"TotalYearlySpending":         totalYearlySpending,
 		"AverageDailySpending":        averageDailySpending,
 		"PercentageIncomeSpent":       percentageOfIncomeSpent,
@@ -325,20 +327,18 @@ type CategoryData struct {
 
 // KPIData holds all the data to be passed to the dashboard.
 type KPIData struct {
-	TotalMonthlySpending      float64
-	TotalYearlySpending       float64
-	AverageDailySpending      float64
-	PercentageIncomeSpent     float64
-	TotalAvailableMoney       float64
-	TopExpensiveTransactions  []models.Transection
-	LatestTransactions        []models.Transection
-	SpendingTrendDaily        []float64
-	DailyDates                []string
-	TopSpendingCategories     []CategoryData
-	BalanceSourceNames        []string
-	BalanceAmounts            []float64
+	TotalMonthlySpending        float64
+	TotalYearlySpending         float64
+	AverageDailySpending        float64
+	PercentageIncomeSpent       float64
+	TotalAvailableMoney         float64
+	TopExpensiveTransactions    []models.Transection
+	LatestTransactions          []models.Transection
+	SpendingTrendDaily          []float64
+	DailyDates                  []string
+	TopSpendingCategories       []CategoryData
+	BalanceSourceNames          []string
+	BalanceAmounts              []float64
 	ExpensivePurchaseCategories []string
-	ExpensivePurchaseAmounts  []float64
+	ExpensivePurchaseAmounts    []float64
 }
-
-
