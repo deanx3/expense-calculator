@@ -40,7 +40,6 @@ func SubmitForm(ctx *gin.Context) {
 
 			err := mgm.Coll(&balanceRecord).Update(&balanceRecord)
 			ctx.HTML(http.StatusOK, "form.html", gin.H{"success": false, "error": err.Error()})
-			return
 		}
 	}
 
