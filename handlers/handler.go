@@ -29,6 +29,7 @@ func SubmitForm(ctx *gin.Context) {
 
 		if formData.ExpenseType == "inbound" {
 			balanceRecord.Balance = formData.Amount + balanceRecord.Balance
+			fmt.Println(balanceRecord.Balance, formData.Amount)
 		} else {
 			//CHeck balance
 			if balanceRecord.Balance < formData.Amount {
