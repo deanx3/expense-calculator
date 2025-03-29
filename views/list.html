@@ -1,69 +1,76 @@
-
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Expense Listings</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.0.3/dist/tailwind.min.css" rel="stylesheet">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Expense Listings</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.0.3/dist/tailwind.min.css" rel="stylesheet">
 </head>
+
 <body class="bg-gray-900 text-white">
-    <div class="container mx-auto py-12">
-        <div class="flex justify-between items-center mb-6">
-            <h1 class="text-3xl font-semibold">Expense Listings</h1>
-            <a href="/" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700">Add New Expense</a>
-        </div>
 
-        <!-- Table Section -->
-        <div class="overflow-x-auto bg-gray-800 p-6 rounded-lg shadow-lg">
-            {{if .expenses}}
-            <table class="w-full text-sm text-left text-gray-400">
-                <thead class="text-xs uppercase bg-gray-700 text-gray-200">
-                    <tr>
-                        <th scope="col" class="px-6 py-3">Location</th>
-                        <th scope="col" class="px-6 py-3">Category</th>
-                        <th scope="col" class="px-6 py-3">Amount</th>
-                        <th scope="col" class="px-6 py-3">Date</th>
-                        <th scope="col" class="px-6 py-3">Description</th>
-                        <th scope="col" class="px-6 py-3">Expense Type</th> <!-- Added Expense Type -->
-                        <th scope="col" class="px-6 py-3">Bank</th> <!-- Added Bank -->
-                    </tr>
-                </thead>
-                <tbody>
-                    {{range .expenses}}
-                    <tr class="border-b border-gray-700 hover:bg-gray-700">
-                        <td class="px-6 py-4">{{.ExpenseLocation}}</td>
-                        <td class="px-6 py-4">{{.Category}}</td>
-                        <td class="px-6 py-4">${{printf "%.2f" .Amount}}</td>
-                        <td class="px-6 py-4">{{.CreatedAt.Format "02 Jan 2006 15:04"}}</td> <!-- Format date -->
-                        <td class="px-6 py-4">{{.Description}}</td>
-                        <td class="px-6 py-4">{{.ExpenseType}}</td> <!-- Expense Type -->
-                        <td class="px-6 py-4">{{.SourceName}}</td> <!-- Bank -->
-                    </tr>
-                    {{end}}
-                </tbody>
-            </table>
-            {{else}}
-            <p class="text-center text-gray-400 py-6">No expenses recorded yet.</p>
-            {{end}}
-        </div>
+  {{ include "navbar" }}
 
-        <!-- Pagination Section -->
-        {{if gt .totalPages 1}}
-        <div class="flex justify-between items-center mt-6">
-            <div>
-                <span class="text-gray-400">Page {{.currentPage}} of {{.totalPages}}</span>
-            </div>
-            <div>
-                {{if gt .currentPage 1}}
-                <a href="/list?page={{.prevPage}}" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700">Previous</a>
-                {{end}}
-                {{if lt .currentPage .totalPages}}
-                <a href="/list?page={{.nextPage}}" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700">Next</a>
-                {{end}}
-            </div>
-        </div>
-        {{end}}
+  <div class="container mx-auto py-12">
+    <div class="flex justify-between items-center mb-6">
+      <h1 class="text-3xl font-semibold">Expense Listings</h1>
+      <a href="/" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700">Add New Expense</a>
     </div>
+
+    <!-- Table Section -->
+    <div class="overflow-x-auto bg-gray-800 p-6 rounded-lg shadow-lg">
+      {{if .expenses}}
+      <table class="w-full text-sm text-left text-gray-400">
+        <thead class="text-xs uppercase bg-gray-700 text-gray-200">
+          <tr>
+            <th scope="col" class="px-6 py-3">Location</th>
+            <th scope="col" class="px-6 py-3">Category</th>
+            <th scope="col" class="px-6 py-3">Amount</th>
+            <th scope="col" class="px-6 py-3">Date</th>
+            <th scope="col" class="px-6 py-3">Description</th>
+            <th scope="col" class="px-6 py-3">Expense Type</th> <!-- Added Expense Type -->
+            <th scope="col" class="px-6 py-3">Bank</th> <!-- Added Bank -->
+          </tr>
+        </thead>
+        <tbody>
+          {{range .expenses}}
+          <tr class="border-b border-gray-700 hover:bg-gray-700">
+            <td class="px-6 py-4">{{.ExpenseLocation}}</td>
+            <td class="px-6 py-4">{{.Category}}</td>
+            <td class="px-6 py-4">${{printf "%.2f" .Amount}}</td>
+            <td class="px-6 py-4">{{.CreatedAt.Format "02 Jan 2006 15:04"}}</td> <!-- Format date -->
+            <td class="px-6 py-4">{{.Description}}</td>
+            <td class="px-6 py-4">{{.ExpenseType}}</td> <!-- Expense Type -->
+            <td class="px-6 py-4">{{.SourceName}}</td> <!-- Bank -->
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+      {{else}}
+      <p class="text-center text-gray-400 py-6">No expenses recorded yet.</p>
+      {{end}}
+    </div>
+
+    <!-- Pagination Section -->
+    {{if gt .totalPages 1}}
+    <div class="flex justify-between items-center mt-6">
+      <div>
+        <span class="text-gray-400">Page {{.currentPage}} of {{.totalPages}}</span>
+      </div>
+      <div>
+        {{if gt .currentPage 1}}
+        <a href="/list?page={{.prevPage}}"
+          class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700">Previous</a>
+        {{end}}
+        {{if lt .currentPage .totalPages}}
+        <a href="/list?page={{.nextPage}}"
+          class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700">Next</a>
+        {{end}}
+      </div>
+    </div>
+    {{end}}
+  </div>
 </body>
+
 </html>

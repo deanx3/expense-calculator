@@ -1,49 +1,24 @@
-
 package main
 
 import (
+	"deanx3/expense-calculator/handlers"
 	"io"
 	"log"
 	"net/http"
 	"os"
-	"sort"
-	"strconv"
-	"time"
+
+	// "sort"
+	// "strconv"
+	// "time"
 
 	"github.com/foolin/goview/supports/ginview"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"github.com/kamva/mgm/v3"
-	"go.mongodb.org/mongo-driver/bson"
+
+	// "go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
-
-type Transection struct {
-	mgm.DefaultModel `bson:",inline"`
-	ExpenseLocation  string  `json:"expense_location" bson:"expense_location" form:"expense_location"`
-	Category         string  `json:"category" bson:"category" form:"category"`
-	Amount           float64 `json:"amount" bson:"amount" form:"amount"`
-	ExpenseType      string  `json:"expense_type" bson:"expense_type"`
-	Description      string  `json:"description" bson:"description" form:"description"`
-	SourceName       string  `json:"source_name" bson:"source_name"`
-}
-
-type Balance struct {
-	mgm.DefaultModel `bson:",inline"`
-	Balance          float64 `json:"balance" bson:"balance"`
-	SourceName       string  `json:"source_name" bson:"source_name"`
-}
-
-type ExpenseRequest struct {
-	ExpenseType     string  `json:"expense_type" form:"expense_type"` // inbound, outbound, transfer
-	ExpenseLocation string  `json:"expense_location,omitempty" form:"expense_location,omitempty"`
-	Category        string  `json:"category,omitempty" form:"category,omitempty"`
-	Amount          float64 `json:"amount" form:"amount"`
-	Description     string  `json:"description,omitempty" form:"description,omitempty"`
-	BankName        string  `json:"bank_name,omitempty" form:"bank_name,omitempty"` // For inbound & transfer
-	FromBank        string  `json:"from_bank,omitempty" form:"from_bank,omitempty"` // For transfer
-	ToBank          string  `json:"to_bank,omitempty" form:"to_bank,omitempty"`     // For transfer
-}
 
 func initMongoDB() {
 	err := godotenv.Load()
@@ -78,406 +53,550 @@ func main() {
 		ctx.HTML(http.StatusOK, "form.html", gin.H{"title": title})
 	})
 
-	router.POST("/submit", func(ctx *gin.Context) {
-		var formData ExpenseRequest
+	router.POST("/submit", handlers.SubmitForm)
 
-		// Bind form data
-		if err := ctx.ShouldBind(&formData); err != nil {
-			ctx.HTML(http.StatusOK, "form.html", gin.H{"title": title, "success": false, "error": err.Error()})
-			return
-		}
+	router.GET("/list", handlers.Listing)
 
-		var balanceRecord Balance
-		err := mgm.Coll(&balanceRecord).First(bson.M{"source_name": formData.BankName}, &balanceRecord)
-		if err != nil && err.Error() != "mongo: no documents in result" {
-			ctx.HTML(http.StatusOK, "form.html", gin.H{"title": title, "success": false, "error": err.Error()})
-			return
-		}
-
-		if err != nil {
-			// If no balance record exists, initialize it
-			if err.Error() == "mongo: no documents in result" {
-				balanceRecord = Balance{
-					Balance:    0,
-					SourceName: formData.BankName,
-				}
-				_ = mgm.Coll(&balanceRecord).Create(&balanceRecord)
-			}
-		}
-
-		switch formData.ExpenseType {
-		case "inbound":
-			balanceRecord.Balance = formData.Amount + balanceRecord.Balance
-
-		case "outbound":
-			if balanceRecord.Balance < formData.Amount {
-				ctx.HTML(http.StatusOK, "form.html", gin.H{"title": title, "success": false, "error": "Insufficient balance"})
-				return
-			}
-			balanceRecord.Balance -= formData.Amount
-
-		case "transfer":
-			var fromBalance Balance
-			err := mgm.Coll(&fromBalance).First(bson.M{"source_name": formData.FromBank}, &fromBalance)
-			if err != nil || fromBalance.Balance < formData.Amount {
-				ctx.HTML(http.StatusOK, "form.html", gin.H{"title": title, "success": false, "error": "Insufficient balance in source account"})
-				return
-			}
-			if err != nil && err.Error() == "mongo: no documents in result" {
-				fromBalance = Balance{
-					Balance:    0,
-					SourceName: formData.FromBank,
-				}
-				_ = mgm.Coll(&fromBalance).Create(&fromBalance)
-			}
-
-			var toBalance Balance
-			err = mgm.Coll(&toBalance).First(bson.M{"source_name": formData.ToBank}, &toBalance)
-			if err != nil && err.Error() != "mongo: no documents in result" {
-				ctx.HTML(http.StatusOK, "form.html", gin.H{"title": title, "success": false, "error": err.Error()})
-				return
-			}
-
-			if err != nil && err.Error() == "mongo: no documents in result" {
-				toBalance = Balance{
-					Balance:    0,
-					SourceName: formData.ToBank,
-				}
-				_ = mgm.Coll(&toBalance).Create(&toBalance)
-			}
-
-			fromBalance.Balance -= formData.Amount
-			toBalance.Balance += formData.Amount
-
-			_ = mgm.Coll(&fromBalance).Update(&fromBalance)
-			_ = mgm.Coll(&toBalance).Update(&toBalance)
-		}
-
-		_ = mgm.Coll(&balanceRecord).Update(&balanceRecord)
-
-		transaction := Transection{
-			ExpenseLocation: formData.ExpenseLocation,
-			Category:        formData.Category,
-			Amount:          formData.Amount,
-			ExpenseType:     formData.ExpenseType,
-			Description:     formData.Description,
-			SourceName:      formData.BankName,
-		}
-
-		if err := mgm.Coll(&transaction).Create(&transaction); err != nil {
-			ctx.HTML(http.StatusOK, "form.html", gin.H{"title": title, "success": false, "error": err.Error()})
-			return
-		}
-
-		ctx.Redirect(http.StatusMovedPermanently, "/list")
-	})
-
-	router.GET("/api/suggestions", func(c *gin.Context) {
-		query := c.DefaultQuery("expense_location", "") // Get query parameter
-		if query == "" {
-			c.HTML(http.StatusOK, "empty_suggestions.html", nil)
-			return
-		}
-
-		var suggestions []Transection
-		filter := bson.M{"expense_location": bson.M{"$regex": query, "$options": "i"}}
-		err := mgm.Coll(&Transection{}).SimpleFind(&suggestions, filter)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch suggestions"})
-			return
-		}
-
-		locations := make([]string, len(suggestions))
-		for i, s := range suggestions {
-			locations[i] = s.ExpenseLocation
-		}
-
-		c.HTML(http.StatusOK, "suggestions.html", gin.H{
-			"suggestions": locations,
-		})
-	})
-
-	router.GET("/list", func(c *gin.Context) {
-		page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
-		if err != nil || page < 1 {
-			page = 1
-		}
-		limit, err := strconv.Atoi(c.DefaultQuery("limit", "10"))
-		if err != nil || limit < 1 {
-			limit = 10
-		}
-		skip := (page - 1) * limit
-
-		pipeline := []interface{}{
-			map[string]interface{}{
-				"$facet": map[string]interface{}{
-					"data": []interface{}{
-						map[string]interface{}{"$sort": map[string]interface{}{"created_at": -1}},
-						map[string]interface{}{"$skip": skip},
-						map[string]interface{}{"$limit": limit},
-					},
-					"totalCount": []interface{}{
-						map[string]interface{}{"$count": "total"},
-					},
-				},
-			},
-		}
-
-		var result []struct {
-			Data       []Transection `bson:"data"`
-			TotalCount []struct {
-				Total int `bson:"total"`
-			} `bson:"totalCount"`
-		}
-
-		cursor, err := mgm.Coll(&Transection{}).Aggregate(mgm.Ctx(), pipeline)
-		if err != nil {
-			log.Println(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve expenses"})
-			return
-		}
-		defer cursor.Close(mgm.Ctx())
-
-		if err = cursor.All(mgm.Ctx(), &result); err != nil {
-			c.JSON(http.StatusOK, gin.H{"error": err.Error()})
-			return
-		}
-
-		if len(result) == 0 {
-			c.HTML(http.StatusOK, "list.html", gin.H{
-				"expenses":    []Transection{},
-				"currentPage": page,
-				"totalPages":  0,
-				"prevPage":    0,
-				"nextPage":    0,
-			})
-			return
-		}
-
-		totalCount := 0
-		if len(result[0].TotalCount) > 0 {
-			totalCount = result[0].TotalCount[0].Total
-		}
-		totalPages := (totalCount + limit - 1) / limit
-		prevPage := page - 1
-		if prevPage < 1 {
-			prevPage = 1
-		}
-		nextPage := page + 1
-		if nextPage > totalPages {
-			nextPage = totalPages
-		}
-
-		c.HTML(http.StatusOK, "list.html", gin.H{
-			"expenses":    result[0].Data,
-			"currentPage": page,
-			"totalPages":  totalPages,
-			"prevPage":    prevPage,
-			"nextPage":    nextPage,
-		})
-	})
-
-	router.GET("/dashboard", func(c *gin.Context) {
-		kpiData := getKPI()
-		c.HTML(http.StatusOK, "dashboard.html", gin.H{
-			"TotalMonthlySpending":      kpiData.TotalMonthlySpending,
-			"TotalYearlySpending":       kpiData.TotalYearlySpending,
-			"AverageDailySpending":      kpiData.AverageDailySpending,
-			"PercentageIncomeSpent":     kpiData.PercentageIncomeSpent,
-			"TotalAvailableMoney":       kpiData.TotalAvailableMoney,
-			"TopExpensiveTransactions":  kpiData.TopExpensiveTransactions,
-			"LatestTransactions":        kpiData.LatestTransactions,
-			"SpendingTrendDaily":        kpiData.SpendingTrendDaily,
-			"DailyDates":                kpiData.DailyDates,
-			"TopSpendingCategories":     kpiData.TopSpendingCategories,
-			"BalanceSourceNames":        kpiData.BalanceSourceNames,
-			"BalanceAmounts":            kpiData.BalanceAmounts,
-			"ExpensivePurchaseCategories": kpiData.ExpensivePurchaseCategories,
-			"ExpensivePurchaseAmounts":  kpiData.ExpensivePurchaseAmounts,
-		})
-	})
-
+	router.GET("/dashboard", handlers.Dashboard)
 	router.Run(":9090")
+//
+// 	router.GET("/api/suggestions", func(c *gin.Context) {
+// 		query := c.DefaultQuery("expense_location", "") // Get query parameter
+// 		if query == "" {
+// 			c.HTML(http.StatusOK, "empty_suggestions.html", nil)
+// 			return
+// 		}
+//
+// 		var suggestions []Transection
+// 		filter := bson.M{"expense_location": bson.M{"$regex": query, "$options": "i"}}
+// 		err := mgm.Coll(&Transection{}).SimpleFind(&suggestions, filter)
+// 		if err != nil {
+// 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch suggestions"})
+// 			return
+// 		}
+//
+// 		locations := make([]string, len(suggestions))
+// 		for i, s := range suggestions {
+// 			locations[i] = s.ExpenseLocation
+// 		}
+//
+// 		c.HTML(http.StatusOK, "suggestions.html", gin.H{
+// 			"suggestions": locations,
+// 		})
+// 	})
+//
+
+//
+// 	router.GET("/dashboard", func(c *gin.Context) {
+// 		kpiData := getKPI()
+// 		c.HTML(http.StatusOK, "dashboard.html", gin.H{
+// 			"TotalMonthlySpending":      kpiData.TotalMonthlySpending,
+// 			"TotalYearlySpending":       kpiData.TotalYearlySpending,
+// 			"AverageDailySpending":      kpiData.AverageDailySpending,
+// 			"PercentageIncomeSpent":     kpiData.PercentageIncomeSpent,
+// 			"TotalAvailableMoney":       kpiData.TotalAvailableMoney,
+// 			"TopExpensiveTransactions":  kpiData.TopExpensiveTransactions,
+// 			"LatestTransactions":        kpiData.LatestTransactions,
+// 			"SpendingTrendDaily":        kpiData.SpendingTrendDaily,
+// 			"DailyDates":                kpiData.DailyDates,
+// 			"TopSpendingCategories":     kpiData.TopSpendingCategories,
+// 			"BalanceSourceNames":        kpiData.BalanceSourceNames,
+// 			"BalanceAmounts":            kpiData.BalanceAmounts,
+// 			"ExpensivePurchaseCategories": kpiData.ExpensivePurchaseCategories,
+// 			"ExpensivePurchaseAmounts":  kpiData.ExpensivePurchaseAmounts,
+// 		})
+// 	})
+//
+// 	router.Run(":9090")
+// }
+//
+// type CategoryData struct {
+// 	Category string
+// 	Amount   float64
+// }
+//
+// // KPIData holds all the data to be passed to the dashboard.
+// type KPIData struct {
+// 	TotalMonthlySpending      float64
+// 	TotalYearlySpending       float64
+// 	AverageDailySpending      float64
+// 	PercentageIncomeSpent     float64
+// 	TotalAvailableMoney       float64
+// 	TopExpensiveTransactions  []Transection
+// 	LatestTransactions        []Transection
+// 	SpendingTrendDaily        []float64
+// 	DailyDates                []string
+// 	TopSpendingCategories     []CategoryData
+// 	BalanceSourceNames        []string
+// 	BalanceAmounts            []float64
+// 	ExpensivePurchaseCategories []string
+// 	ExpensivePurchaseAmounts  []float64
+// }
+//
+// func getKPI() KPIData {
+// 	// Collections
+// 	transactionCollection := mgm.Coll(&Transection{})
+// 	balanceCollection := mgm.Coll(&Balance{})
+//
+// 	now := time.Now()
+// 	currentMonth := now.Month()
+// 	startOfMonth := time.Date(now.Year(), currentMonth, 1, 0, 0, 0, 0, time.Local)
+// 	endOfMonth := startOfMonth.AddDate(0, 1, 0).Add(-time.Second)
+// 	startOfYear := time.Date(now.Year(), 1, 1, 0, 0, 0, 0, time.Local)
+//
+// 	// Retrieve monthly transactions excluding transfers
+// 	monthlyTransactions := []Transection{}
+// 	err := transactionCollection.SimpleFind(&monthlyTransactions, bson.M{
+// 		"created_at":   bson.M{"$gte": startOfMonth, "$lte": endOfMonth},
+// 		"expense_type": bson.M{"$ne": "transfer"},
+// 	})
+// 	if err != nil {
+// 		log.Println("Error fetching monthly transactions:", err)
+// 	}
+//
+// 	// Calculate Total Monthly Spending & category totals (exclude transfers)
+// 	var totalMonthlySpending float64
+// 	categoryTotals := make(map[string]float64)
+// 	for _, t := range monthlyTransactions {
+// 		if t.ExpenseType == "outbound" {
+// 			totalMonthlySpending += t.Amount
+// 			categoryTotals[t.Category] += t.Amount
+// 		}
+// 	}
+//
+// 	// Retrieve yearly transactions excluding transfers
+// 	yearlyTransactions := []Transection{}
+// 	err = transactionCollection.SimpleFind(&yearlyTransactions, bson.M{
+// 		"created_at":   bson.M{"$gte": startOfYear},
+// 		"expense_type": bson.M{"$ne": "transfer"},
+// 	})
+// 	if err != nil {
+// 		log.Println("Error fetching yearly transactions:", err)
+// 	}
+// 	var totalYearlySpending float64
+// 	for _, t := range yearlyTransactions {
+// 		if t.ExpenseType == "outbound" {
+// 			totalYearlySpending += t.Amount
+// 		}
+// 	}
+//
+// 	// Average Daily Spending for current month
+// 	daysInMonth := startOfMonth.AddDate(0, 1, 0).Sub(startOfMonth).Hours() / 24
+// 	averageDailySpending := totalMonthlySpending / daysInMonth
+//
+// 	// Fetch balance data for available money and balance chart
+// 	balances := []Balance{}
+// 	err = balanceCollection.SimpleFind(&balances, bson.M{})
+// 	if err != nil {
+// 		log.Println("Error fetching balances:", err)
+// 	}
+// 	var totalAvailableMoney float64
+// 	var balanceSourceNames []string
+// 	var balanceAmounts []float64
+// 	var totalIncome float64
+// 	for _, balance := range balances {
+// 		totalIncome += balance.Balance
+// 		totalAvailableMoney += balance.Balance
+// 		balanceSourceNames = append(balanceSourceNames, balance.SourceName)
+// 		balanceAmounts = append(balanceAmounts, balance.Balance)
+// 	}
+//
+// 	// Calculate % of Income Spent (avoid division by zero)
+// 	percentageOfIncomeSpent := 0.0
+// 	if totalIncome != 0 {
+// 		percentageOfIncomeSpent = (totalMonthlySpending / totalIncome) * 100
+// 	}
+//
+// 	// Retrieve top expensive transactions for current month (exclude transfers)
+// 	topExpensiveTransactions := []Transection{}
+// 	err = transactionCollection.SimpleFind(&topExpensiveTransactions, bson.M{
+// 		"created_at":   bson.M{"$gte": startOfMonth, "$lte": endOfMonth},
+// 		"expense_type": bson.M{"$ne": "transfer"},
+// 	})
+// 	if err != nil {
+// 		log.Println("Error fetching top transactions:", err)
+// 	}
+// 	sort.Slice(topExpensiveTransactions, func(i, j int) bool {
+// 		return topExpensiveTransactions[i].Amount > topExpensiveTransactions[j].Amount
+// 	})
+// 	if len(topExpensiveTransactions) > 10 {
+// 		topExpensiveTransactions = topExpensiveTransactions[:10]
+// 	}
+//
+// 	// Prepare data for the Most Expensive Purchases pie chart
+// 	var expensivePurchaseCategories []string
+// 	var expensivePurchaseAmounts []float64
+// 	for _, t := range topExpensiveTransactions {
+// 		expensivePurchaseCategories = append(expensivePurchaseCategories, t.Category)
+// 		expensivePurchaseAmounts = append(expensivePurchaseAmounts, t.Amount)
+// 	}
+//
+// 	// Build Daily Spending Trend & Dates for current month
+// 	var dailySpending []float64
+// 	var dailyDates []string
+// 	for day := 1; day <= int(daysInMonth); day++ {
+// 		dayStart := time.Date(now.Year(), currentMonth, day, 0, 0, 0, 0, time.Local)
+// 		dayEnd := dayStart.Add(24 * time.Hour).Add(-time.Second)
+// 		var dailyTotal float64
+// 		for _, t := range monthlyTransactions {
+// 			if t.CreatedAt.After(dayStart) && t.CreatedAt.Before(dayEnd) {
+// 				dailyTotal += t.Amount
+// 			}
+// 		}
+// 		dailySpending = append(dailySpending, dailyTotal)
+// 		dailyDates = append(dailyDates, dayStart.Format("2006-01-02"))
+// 	}
+//
+// 	// Retrieve latest transactions (exclude transfers) and take top 20
+// 	latestTransactions := []Transection{}
+// 	err = transactionCollection.SimpleFind(&latestTransactions, bson.M{
+// 		"expense_type": bson.M{"$ne": "transfer"},
+// 	})
+// 	if err != nil {
+// 		log.Println("Error fetching latest transactions:", err)
+// 	}
+// 	sort.Slice(latestTransactions, func(i, j int) bool {
+// 		return latestTransactions[i].CreatedAt.After(latestTransactions[j].CreatedAt)
+// 	})
+// 	if len(latestTransactions) > 20 {
+// 		latestTransactions = latestTransactions[:20]
+// 	}
+//
+// 	// Calculate Top 3 Spending Categories
+// 	var topSpendingCategories []CategoryData
+// 	for cat, amt := range categoryTotals {
+// 		topSpendingCategories = append(topSpendingCategories, CategoryData{Category: cat, Amount: amt})
+// 	}
+// 	sort.Slice(topSpendingCategories, func(i, j int) bool {
+// 		return topSpendingCategories[i].Amount > topSpendingCategories[j].Amount
+// 	})
+// 	if len(topSpendingCategories) > 3 {
+// 		topSpendingCategories = topSpendingCategories[:3]
+// 	}
+//
+// 	return KPIData{
+// 		TotalMonthlySpending:      totalMonthlySpending,
+// 		TotalYearlySpending:       totalYearlySpending,
+// 		AverageDailySpending:      averageDailySpending,
+// 		PercentageIncomeSpent:     percentageOfIncomeSpent,
+// 		TotalAvailableMoney:       totalAvailableMoney,
+// 		TopExpensiveTransactions:  topExpensiveTransactions,
+// 		LatestTransactions:        latestTransactions,
+// 		SpendingTrendDaily:        dailySpending,
+// 		DailyDates:                dailyDates,
+// 		TopSpendingCategories:     topSpendingCategories,
+// 		BalanceSourceNames:        balanceSourceNames,
+// 		BalanceAmounts:            balanceAmounts,
+// 		ExpensivePurchaseCategories: expensivePurchaseCategories,
+// 		ExpensivePurchaseAmounts:  expensivePurchaseAmounts,
+// 	}
 }
-
-type CategoryData struct {
-	Category string
-	Amount   float64
-}
-
-// KPIData holds all the data to be passed to the dashboard.
-type KPIData struct {
-	TotalMonthlySpending      float64
-	TotalYearlySpending       float64
-	AverageDailySpending      float64
-	PercentageIncomeSpent     float64
-	TotalAvailableMoney       float64
-	TopExpensiveTransactions  []Transection
-	LatestTransactions        []Transection
-	SpendingTrendDaily        []float64
-	DailyDates                []string
-	TopSpendingCategories     []CategoryData
-	BalanceSourceNames        []string
-	BalanceAmounts            []float64
-	ExpensivePurchaseCategories []string
-	ExpensivePurchaseAmounts  []float64
-}
-
-func getKPI() KPIData {
-	// Collections
-	transactionCollection := mgm.Coll(&Transection{})
-	balanceCollection := mgm.Coll(&Balance{})
-
-	now := time.Now()
-	currentMonth := now.Month()
-	startOfMonth := time.Date(now.Year(), currentMonth, 1, 0, 0, 0, 0, time.Local)
-	endOfMonth := startOfMonth.AddDate(0, 1, 0).Add(-time.Second)
-	startOfYear := time.Date(now.Year(), 1, 1, 0, 0, 0, 0, time.Local)
-
-	// Retrieve monthly transactions excluding transfers
-	monthlyTransactions := []Transection{}
-	err := transactionCollection.SimpleFind(&monthlyTransactions, bson.M{
-		"created_at":   bson.M{"$gte": startOfMonth, "$lte": endOfMonth},
-		"expense_type": bson.M{"$ne": "transfer"},
-	})
-	if err != nil {
-		log.Println("Error fetching monthly transactions:", err)
-	}
-
-	// Calculate Total Monthly Spending & category totals (exclude transfers)
-	var totalMonthlySpending float64
-	categoryTotals := make(map[string]float64)
-	for _, t := range monthlyTransactions {
-		if t.ExpenseType == "outbound" {
-			totalMonthlySpending += t.Amount
-			categoryTotals[t.Category] += t.Amount
-		}
-	}
-
-	// Retrieve yearly transactions excluding transfers
-	yearlyTransactions := []Transection{}
-	err = transactionCollection.SimpleFind(&yearlyTransactions, bson.M{
-		"created_at":   bson.M{"$gte": startOfYear},
-		"expense_type": bson.M{"$ne": "transfer"},
-	})
-	if err != nil {
-		log.Println("Error fetching yearly transactions:", err)
-	}
-	var totalYearlySpending float64
-	for _, t := range yearlyTransactions {
-		if t.ExpenseType == "outbound" {
-			totalYearlySpending += t.Amount
-		}
-	}
-
-	// Average Daily Spending for current month
-	daysInMonth := startOfMonth.AddDate(0, 1, 0).Sub(startOfMonth).Hours() / 24
-	averageDailySpending := totalMonthlySpending / daysInMonth
-
-	// Fetch balance data for available money and balance chart
-	balances := []Balance{}
-	err = balanceCollection.SimpleFind(&balances, bson.M{})
-	if err != nil {
-		log.Println("Error fetching balances:", err)
-	}
-	var totalAvailableMoney float64
-	var balanceSourceNames []string
-	var balanceAmounts []float64
-	var totalIncome float64
-	for _, balance := range balances {
-		totalIncome += balance.Balance
-		totalAvailableMoney += balance.Balance
-		balanceSourceNames = append(balanceSourceNames, balance.SourceName)
-		balanceAmounts = append(balanceAmounts, balance.Balance)
-	}
-
-	// Calculate % of Income Spent (avoid division by zero)
-	percentageOfIncomeSpent := 0.0
-	if totalIncome != 0 {
-		percentageOfIncomeSpent = (totalMonthlySpending / totalIncome) * 100
-	}
-
-	// Retrieve top expensive transactions for current month (exclude transfers)
-	topExpensiveTransactions := []Transection{}
-	err = transactionCollection.SimpleFind(&topExpensiveTransactions, bson.M{
-		"created_at":   bson.M{"$gte": startOfMonth, "$lte": endOfMonth},
-		"expense_type": bson.M{"$ne": "transfer"},
-	})
-	if err != nil {
-		log.Println("Error fetching top transactions:", err)
-	}
-	sort.Slice(topExpensiveTransactions, func(i, j int) bool {
-		return topExpensiveTransactions[i].Amount > topExpensiveTransactions[j].Amount
-	})
-	if len(topExpensiveTransactions) > 10 {
-		topExpensiveTransactions = topExpensiveTransactions[:10]
-	}
-
-	// Prepare data for the Most Expensive Purchases pie chart
-	var expensivePurchaseCategories []string
-	var expensivePurchaseAmounts []float64
-	for _, t := range topExpensiveTransactions {
-		expensivePurchaseCategories = append(expensivePurchaseCategories, t.Category)
-		expensivePurchaseAmounts = append(expensivePurchaseAmounts, t.Amount)
-	}
-
-	// Build Daily Spending Trend & Dates for current month
-	var dailySpending []float64
-	var dailyDates []string
-	for day := 1; day <= int(daysInMonth); day++ {
-		dayStart := time.Date(now.Year(), currentMonth, day, 0, 0, 0, 0, time.Local)
-		dayEnd := dayStart.Add(24 * time.Hour).Add(-time.Second)
-		var dailyTotal float64
-		for _, t := range monthlyTransactions {
-			if t.CreatedAt.After(dayStart) && t.CreatedAt.Before(dayEnd) {
-				dailyTotal += t.Amount
-			}
-		}
-		dailySpending = append(dailySpending, dailyTotal)
-		dailyDates = append(dailyDates, dayStart.Format("2006-01-02"))
-	}
-
-	// Retrieve latest transactions (exclude transfers) and take top 20
-	latestTransactions := []Transection{}
-	err = transactionCollection.SimpleFind(&latestTransactions, bson.M{
-		"expense_type": bson.M{"$ne": "transfer"},
-	})
-	if err != nil {
-		log.Println("Error fetching latest transactions:", err)
-	}
-	sort.Slice(latestTransactions, func(i, j int) bool {
-		return latestTransactions[i].CreatedAt.After(latestTransactions[j].CreatedAt)
-	})
-	if len(latestTransactions) > 20 {
-		latestTransactions = latestTransactions[:20]
-	}
-
-	// Calculate Top 3 Spending Categories
-	var topSpendingCategories []CategoryData
-	for cat, amt := range categoryTotals {
-		topSpendingCategories = append(topSpendingCategories, CategoryData{Category: cat, Amount: amt})
-	}
-	sort.Slice(topSpendingCategories, func(i, j int) bool {
-		return topSpendingCategories[i].Amount > topSpendingCategories[j].Amount
-	})
-	if len(topSpendingCategories) > 3 {
-		topSpendingCategories = topSpendingCategories[:3]
-	}
-
-	return KPIData{
-		TotalMonthlySpending:      totalMonthlySpending,
-		TotalYearlySpending:       totalYearlySpending,
-		AverageDailySpending:      averageDailySpending,
-		PercentageIncomeSpent:     percentageOfIncomeSpent,
-		TotalAvailableMoney:       totalAvailableMoney,
-		TopExpensiveTransactions:  topExpensiveTransactions,
-		LatestTransactions:        latestTransactions,
-		SpendingTrendDaily:        dailySpending,
-		DailyDates:                dailyDates,
-		TopSpendingCategories:     topSpendingCategories,
-		BalanceSourceNames:        balanceSourceNames,
-		BalanceAmounts:            balanceAmounts,
-		ExpensivePurchaseCategories: expensivePurchaseCategories,
-		ExpensivePurchaseAmounts:  expensivePurchaseAmounts,
-	}
-}
+//
+// 	router.GET("/api/suggestions", func(c *gin.Context) {
+// 		query := c.DefaultQuery("expense_location", "") // Get query parameter
+// 		if query == "" {
+// 			c.HTML(http.StatusOK, "empty_suggestions.html", nil)
+// 			return
+// 		}
+//
+// 		var suggestions []Transection
+// 		filter := bson.M{"expense_location": bson.M{"$regex": query, "$options": "i"}}
+// 		err := mgm.Coll(&Transection{}).SimpleFind(&suggestions, filter)
+// 		if err != nil {
+// 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch suggestions"})
+// 			return
+// 		}
+//
+// 		locations := make([]string, len(suggestions))
+// 		for i, s := range suggestions {
+// 			locations[i] = s.ExpenseLocation
+// 		}
+//
+// 		c.HTML(http.StatusOK, "suggestions.html", gin.H{
+// 			"suggestions": locations,
+// 		})
+// 	})
+//
+// 	router.GET("/list", func(c *gin.Context) {
+// 		page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+// 		if err != nil || page < 1 {
+// 			page = 1
+// 		}
+// 		limit, err := strconv.Atoi(c.DefaultQuery("limit", "10"))
+// 		if err != nil || limit < 1 {
+// 			limit = 10
+// 		}
+// 		skip := (page - 1) * limit
+//
+// 		pipeline := []interface{}{
+// 			map[string]interface{}{
+// 				"$facet": map[string]interface{}{
+// 					"data": []interface{}{
+// 						map[string]interface{}{"$sort": map[string]interface{}{"created_at": -1}},
+// 						map[string]interface{}{"$skip": skip},
+// 						map[string]interface{}{"$limit": limit},
+// 					},
+// 					"totalCount": []interface{}{
+// 						map[string]interface{}{"$count": "total"},
+// 					},
+// 				},
+// 			},
+// 		}
+//
+// 		var result []struct {
+// 			Data       []Transection `bson:"data"`
+// 			TotalCount []struct {
+// 				Total int `bson:"total"`
+// 			} `bson:"totalCount"`
+// 		}
+//
+// 		cursor, err := mgm.Coll(&Transection{}).Aggregate(mgm.Ctx(), pipeline)
+// 		if err != nil {
+// 			log.Println(err)
+// 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve expenses"})
+// 			return
+// 		}
+// 		defer cursor.Close(mgm.Ctx())
+//
+// 		if err = cursor.All(mgm.Ctx(), &result); err != nil {
+// 			c.JSON(http.StatusOK, gin.H{"error": err.Error()})
+// 			return
+// 		}
+//
+// 		if len(result) == 0 {
+// 			c.HTML(http.StatusOK, "list.html", gin.H{
+// 				"expenses":    []Transection{},
+// 				"currentPage": page,
+// 				"totalPages":  0,
+// 				"prevPage":    0,
+// 				"nextPage":    0,
+// 			})
+// 			return
+// 		}
+//
+// 		totalCount := 0
+// 		if len(result[0].TotalCount) > 0 {
+// 			totalCount = result[0].TotalCount[0].Total
+// 		}
+// 		totalPages := (totalCount + limit - 1) / limit
+// 		prevPage := page - 1
+// 		if prevPage < 1 {
+// 			prevPage = 1
+// 		}
+// 		nextPage := page + 1
+// 		if nextPage > totalPages {
+// 			nextPage = totalPages
+// 		}
+//
+// 		c.HTML(http.StatusOK, "list.html", gin.H{
+// 			"expenses":    result[0].Data,
+// 			"currentPage": page,
+// 			"totalPages":  totalPages,
+// 			"prevPage":    prevPage,
+// 			"nextPage":    nextPage,
+// 		})
+// 	})
+//
+// 	router.GET("/dashboard", func(c *gin.Context) {
+// 		kpiData := getKPI()
+// 		c.HTML(http.StatusOK, "dashboard.html", gin.H{
+// 			"TotalMonthlySpending":      kpiData.TotalMonthlySpending,
+// 			"TotalYearlySpending":       kpiData.TotalYearlySpending,
+// 			"AverageDailySpending":      kpiData.AverageDailySpending,
+// 			"PercentageIncomeSpent":     kpiData.PercentageIncomeSpent,
+// 			"TotalAvailableMoney":       kpiData.TotalAvailableMoney,
+// 			"TopExpensiveTransactions":  kpiData.TopExpensiveTransactions,
+// 			"LatestTransactions":        kpiData.LatestTransactions,
+// 			"SpendingTrendDaily":        kpiData.SpendingTrendDaily,
+// 			"DailyDates":                kpiData.DailyDates,
+// 			"TopSpendingCategories":     kpiData.TopSpendingCategories,
+// 			"BalanceSourceNames":        kpiData.BalanceSourceNames,
+// 			"BalanceAmounts":            kpiData.BalanceAmounts,
+// 			"ExpensivePurchaseCategories": kpiData.ExpensivePurchaseCategories,
+// 			"ExpensivePurchaseAmounts":  kpiData.ExpensivePurchaseAmounts,
+// 		})
+// 	})
+//
+// }
+//
+// type CategoryData struct {
+// 	Category string
+// 	Amount   float64
+// }
+//
+// // KPIData holds all the data to be passed to the dashboard.
+// type KPIData struct {
+// 	TotalMonthlySpending      float64
+// 	TotalYearlySpending       float64
+// 	AverageDailySpending      float64
+// 	PercentageIncomeSpent     float64
+// 	TotalAvailableMoney       float64
+// 	TopExpensiveTransactions  []Transection
+// 	LatestTransactions        []Transection
+// 	SpendingTrendDaily        []float64
+// 	DailyDates                []string
+// 	TopSpendingCategories     []CategoryData
+// 	BalanceSourceNames        []string
+// 	BalanceAmounts            []float64
+// 	ExpensivePurchaseCategories []string
+// 	ExpensivePurchaseAmounts  []float64
+// }
+//
+// func getKPI() KPIData {
+// 	// Collections
+// 	transactionCollection := mgm.Coll(&Transection{})
+// 	balanceCollection := mgm.Coll(&Balance{})
+//
+// 	now := time.Now()
+// 	currentMonth := now.Month()
+// 	startOfMonth := time.Date(now.Year(), currentMonth, 1, 0, 0, 0, 0, time.Local)
+// 	endOfMonth := startOfMonth.AddDate(0, 1, 0).Add(-time.Second)
+// 	startOfYear := time.Date(now.Year(), 1, 1, 0, 0, 0, 0, time.Local)
+//
+// 	// Retrieve monthly transactions excluding transfers
+// 	monthlyTransactions := []Transection{}
+// 	err := transactionCollection.SimpleFind(&monthlyTransactions, bson.M{
+// 		"created_at":   bson.M{"$gte": startOfMonth, "$lte": endOfMonth},
+// 		"expense_type": bson.M{"$ne": "transfer"},
+// 	})
+// 	if err != nil {
+// 		log.Println("Error fetching monthly transactions:", err)
+// 	}
+//
+// 	// Calculate Total Monthly Spending & category totals (exclude transfers)
+// 	var totalMonthlySpending float64
+// 	categoryTotals := make(map[string]float64)
+// 	for _, t := range monthlyTransactions {
+// 		if t.ExpenseType == "outbound" {
+// 			totalMonthlySpending += t.Amount
+// 			categoryTotals[t.Category] += t.Amount
+// 		}
+// 	}
+//
+// 	// Retrieve yearly transactions excluding transfers
+// 	yearlyTransactions := []Transection{}
+// 	err = transactionCollection.SimpleFind(&yearlyTransactions, bson.M{
+// 		"created_at":   bson.M{"$gte": startOfYear},
+// 		"expense_type": bson.M{"$ne": "transfer"},
+// 	})
+// 	if err != nil {
+// 		log.Println("Error fetching yearly transactions:", err)
+// 	}
+// 	var totalYearlySpending float64
+// 	for _, t := range yearlyTransactions {
+// 		if t.ExpenseType == "outbound" {
+// 			totalYearlySpending += t.Amount
+// 		}
+// 	}
+//
+// 	// Average Daily Spending for current month
+// 	daysInMonth := startOfMonth.AddDate(0, 1, 0).Sub(startOfMonth).Hours() / 24
+// 	averageDailySpending := totalMonthlySpending / daysInMonth
+//
+// 	// Fetch balance data for available money and balance chart
+// 	balances := []Balance{}
+// 	err = balanceCollection.SimpleFind(&balances, bson.M{})
+// 	if err != nil {
+// 		log.Println("Error fetching balances:", err)
+// 	}
+// 	var totalAvailableMoney float64
+// 	var balanceSourceNames []string
+// 	var balanceAmounts []float64
+// 	var totalIncome float64
+// 	for _, balance := range balances {
+// 		totalIncome += balance.Balance
+// 		totalAvailableMoney += balance.Balance
+// 		balanceSourceNames = append(balanceSourceNames, balance.SourceName)
+// 		balanceAmounts = append(balanceAmounts, balance.Balance)
+// 	}
+//
+// 	// Calculate % of Income Spent (avoid division by zero)
+// 	percentageOfIncomeSpent := 0.0
+// 	if totalIncome != 0 {
+// 		percentageOfIncomeSpent = (totalMonthlySpending / totalIncome) * 100
+// 	}
+//
+// 	// Retrieve top expensive transactions for current month (exclude transfers)
+// 	topExpensiveTransactions := []Transection{}
+// 	err = transactionCollection.SimpleFind(&topExpensiveTransactions, bson.M{
+// 		"created_at":   bson.M{"$gte": startOfMonth, "$lte": endOfMonth},
+// 		"expense_type": bson.M{"$ne": "transfer"},
+// 	})
+// 	if err != nil {
+// 		log.Println("Error fetching top transactions:", err)
+// 	}
+// 	sort.Slice(topExpensiveTransactions, func(i, j int) bool {
+// 		return topExpensiveTransactions[i].Amount > topExpensiveTransactions[j].Amount
+// 	})
+// 	if len(topExpensiveTransactions) > 10 {
+// 		topExpensiveTransactions = topExpensiveTransactions[:10]
+// 	}
+//
+// 	// Prepare data for the Most Expensive Purchases pie chart
+// 	var expensivePurchaseCategories []string
+// 	var expensivePurchaseAmounts []float64
+// 	for _, t := range topExpensiveTransactions {
+// 		expensivePurchaseCategories = append(expensivePurchaseCategories, t.Category)
+// 		expensivePurchaseAmounts = append(expensivePurchaseAmounts, t.Amount)
+// 	}
+//
+// 	// Build Daily Spending Trend & Dates for current month
+// 	var dailySpending []float64
+// 	var dailyDates []string
+// 	for day := 1; day <= int(daysInMonth); day++ {
+// 		dayStart := time.Date(now.Year(), currentMonth, day, 0, 0, 0, 0, time.Local)
+// 		dayEnd := dayStart.Add(24 * time.Hour).Add(-time.Second)
+// 		var dailyTotal float64
+// 		for _, t := range monthlyTransactions {
+// 			if t.CreatedAt.After(dayStart) && t.CreatedAt.Before(dayEnd) {
+// 				dailyTotal += t.Amount
+// 			}
+// 		}
+// 		dailySpending = append(dailySpending, dailyTotal)
+// 		dailyDates = append(dailyDates, dayStart.Format("2006-01-02"))
+// 	}
+//
+// 	// Retrieve latest transactions (exclude transfers) and take top 20
+// 	latestTransactions := []Transection{}
+// 	err = transactionCollection.SimpleFind(&latestTransactions, bson.M{
+// 		"expense_type": bson.M{"$ne": "transfer"},
+// 	})
+// 	if err != nil {
+// 		log.Println("Error fetching latest transactions:", err)
+// 	}
+// 	sort.Slice(latestTransactions, func(i, j int) bool {
+// 		return latestTransactions[i].CreatedAt.After(latestTransactions[j].CreatedAt)
+// 	})
+// 	if len(latestTransactions) > 20 {
+// 		latestTransactions = latestTransactions[:20]
+// 	}
+//
+// 	// Calculate Top 3 Spending Categories
+// 	var topSpendingCategories []CategoryData
+// 	for cat, amt := range categoryTotals {
+// 		topSpendingCategories = append(topSpendingCategories, CategoryData{Category: cat, Amount: amt})
+// 	}
+// 	sort.Slice(topSpendingCategories, func(i, j int) bool {
+// 		return topSpendingCategories[i].Amount > topSpendingCategories[j].Amount
+// 	})
+// 	if len(topSpendingCategories) > 3 {
+// 		topSpendingCategories = topSpendingCategories[:3]
+// 	}
+//
+// 	return KPIData{
+// 		TotalMonthlySpending:      totalMonthlySpending,
+// 		TotalYearlySpending:       totalYearlySpending,
+// 		AverageDailySpending:      averageDailySpending,
+// 		PercentageIncomeSpent:     percentageOfIncomeSpent,
+// 		TotalAvailableMoney:       totalAvailableMoney,
+// 		TopExpensiveTransactions:  topExpensiveTransactions,
+// 		LatestTransactions:        latestTransactions,
+// 		SpendingTrendDaily:        dailySpending,
+// 		DailyDates:                dailyDates,
+// 		TopSpendingCategories:     topSpendingCategories,
+// 		BalanceSourceNames:        balanceSourceNames,
+// 		BalanceAmounts:            balanceAmounts,
+// 		ExpensivePurchaseCategories: expensivePurchaseCategories,
+// 		ExpensivePurchaseAmounts:  expensivePurchaseAmounts,
+// 	}
+// }
